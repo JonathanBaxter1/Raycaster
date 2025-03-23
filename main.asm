@@ -8,6 +8,8 @@ program_start:
 	call clear_screen
 	call draw_map
 	call draw_player
+	call render_3d
+
 
 	call handle_keyboard
 	jmp .loop
@@ -183,12 +185,42 @@ draw_map:
 	ret
 .i: dw 0
 
+render_3d:
+	mov bx, [player_x]
+	shr bx, 10 ; map x pos
+	mov cx, [player_y]
+	shr cx, 10 ; map y pos
+.loop_step:
+	inc cx
+	mov si, map
+	mov ax, cx
+	shl ax, 3
+	add ax, bx
+	add si, ax
+	lodsb
+	cmp al, 0
+	je .loop_step
+	shl cx, 10
+	sub cx, [player_y]
+	shr cx, 7
+	cmp cx, 0
+	jne .skip_cx_1
+	mov cx, 1
+.skip_cx_1:
+
+	; Render
+	mov di, 80
+	call draw_line
+	ret
+
 draw_line:
 	; cx = height
 	; di = x coordinate
 	mov al, 0x20
+.loop:
 	stosb
-	add di, 320
+	add di, 320-1
+	loop .loop
 	ret
 
 draw_sprite8:
