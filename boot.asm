@@ -1,3 +1,5 @@
+%include "header.asm"
+
 ORG 0
 BITS 16
 
@@ -76,7 +78,7 @@ boot_location2:
 disk_addr_packet:
 	db 0x10
 	db 0x00
-block_count: dw 2
+block_count: dw NUM_SECTORS
 db_address: dw 0x7c00
 	dw 0x00
 	dd 1

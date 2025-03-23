@@ -1,3 +1,5 @@
+%include "header.asm"
+
 ORG 0
 BITS 16
 
@@ -186,42 +188,110 @@ draw_map:
 .i: dw 0
 
 render_3d:
-	mov bx, [player_x]
-	shr bx, 10 ; map x pos
+	mov word [.pixel_x], 0
+.loop_x:
+	mov byte [.first_loop_var], 1
+	mov bx, [player_x] ; cur x pos
 	mov cx, [player_y]
 	shr cx, 10 ; map y pos
 .loop_step:
+	; inc map_y
 	inc cx
+
+	cmp byte [.first_loop_var], 0
+	mov byte [.first_loop_var], 0
+	je .not_first_loop
+
+	push cx
+	shl cx, 10
+	sub cx, [player_y]
+	mov ax, [.pixel_x] ;temp
+	mul cx ; changes dx
+	mov cx, 160
+	div cx ; changes dx
+	sub bx, ax
+	pop cx
+	jmp .first_loop
+.not_first_loop:
+	push cx
+	mov ax, [.pixel_x]
+	shl ax, 6
+	mov cx, 10
+	mov dx, 0
+	div cx ; changes dx
+	sub bx, ax
+	pop cx
+.first_loop:
+
+	; block = map[x, y]
 	mov si, map
 	mov ax, cx
 	shl ax, 3
-	add ax, bx
+	mov dx, bx
+	shr dx, 10
+	add ax, dx
 	add si, ax
 	lodsb
+
+	; if block == 0, continue
 	cmp al, 0
 	je .loop_step
+
+	; dis = map_y*(2^10) - player_y
+	; line_len = dis/(2^7)
 	shl cx, 10
 	sub cx, [player_y]
-	shr cx, 7
-	cmp cx, 0
-	jne .skip_cx_1
-	mov cx, 1
-.skip_cx_1:
+;	shr cx, 7
 
 	; Render
-	mov di, 80
+	mov di, [.pixel_x]
+	add di, 160
 	call draw_line
+
+	inc word [.pixel_x]
+	cmp word [.pixel_x], 160
+	jne .loop_x
 	ret
+.first_loop_var:
+	db 1
+.pixel_x:
+	dw 0
+
 
 draw_line:
-	; cx = height
+	; cx = distance from wall
 	; di = x coordinate
-	mov al, 0x20
+
+	; if dis < 820, len = 200
+	cmp cx, 820
+	jb .max_len
+
+	; len = 163840/dis
+	mov ax, 32768
+	mov dx, 2
+	div cx
+	mov cx, ax
+
+	jmp .not_max_len
+.max_len:
+	mov cx, 200
+.not_max_len:
+
+	shr cl, 1
+	mov al, 100
+	sub al, cl
+	mov bl, 5
+	mul bl
+	shl ax, 6
+	add di, ax
+	shl cl, 1
+	mov al, 0x20 ; color
 .loop:
 	stosb
 	add di, 320-1
 	loop .loop
 	ret
+
 
 draw_sprite8:
 	; si = sprite pointer
@@ -262,12 +332,12 @@ sprite1:
 
 map:
 	db 1,1,1,1,1,1,1,1
-	db 1,0,1,0,0,0,0,1
-	db 1,0,1,0,0,1,1,1
 	db 1,0,0,0,0,0,0,1
-	db 1,0,0,1,0,0,0,1
-	db 1,0,1,0,0,0,0,1
-	db 1,1,1,0,0,0,0,1
+	db 1,0,0,0,0,0,0,1
+	db 1,0,0,0,1,0,0,1
+	db 1,0,0,0,1,0,0,1
+	db 1,0,0,0,1,0,0,1
+	db 1,0,0,0,1,0,0,1
 	db 1,1,1,1,1,1,1,1
 
 sin_table:
@@ -283,4 +353,4 @@ cos_table:
 	db -1,24,48,70,90,106,117,125
 
 
-times 1024-($-$$) db 0
+times NUM_SECTORS*512-($-$$) db 0
