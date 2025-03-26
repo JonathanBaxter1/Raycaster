@@ -196,7 +196,7 @@ draw_map:
 .i: dw 0
 
 render_3d:
-	mov word [.pixel_x], 0
+	mov word [.pixel_x], -160
 .loop_x:
 	; Vertical Scan
 	mov word [.min_dis_v], 65535
@@ -204,6 +204,7 @@ render_3d:
 	mov bx, [player_x] ; cur x pos
 	mov cx, [player_y] ; cur y pos
 	shr bx, 10 ; map x pos
+	inc bx
 .loop_step_v:
 	; dec map_x
 	dec bx
@@ -213,35 +214,43 @@ render_3d:
 	je .not_first_loop_v
 
 	push bx
+	push cx
 	shl bx, 10
 	sub bx, [player_x]
 	neg bx
 	mov ax, 160
-	mul cx ; changes dx
+	mul bx ; changes dx ; good
 	mov cx, [.pixel_x]
 	cmp cx, 0
 	jne .cx_not_0 ; to prevent divide by 0
+	pop cx
 	pop bx
+	mov cx, 65535 ; max distance
 	jmp .end_loop_step_v
 .cx_not_0:
 	div cx ; changes dx
+	pop cx
 	add cx, ax
 	pop bx
 	jmp .first_loop_v
 .not_first_loop_v:
 	push bx
+	push cx
 	mov dx, 2
 	mov ax, 32768
 	mov cx, [.pixel_x]
 	div cx ; changes dx
+	pop cx
 	add cx, ax
 	pop bx
 .first_loop_v:
 	; block = map[x, y]
 	mov si, map
 	mov ax, cx
-	shr ax, 7
+	shr ax, 10
+	shl ax, 3
 	mov dx, bx
+	dec dx
 	add ax, dx
 	add si, ax
 	lodsb
@@ -249,15 +258,17 @@ render_3d:
 	; if block == 0 && map_x != 0, continue
 	cmp bx, 0
 	je .world_border
+	cmp cx, 8*1024
+	jae .world_border
 	cmp al, 0
 	je .loop_step_v
 .world_border:
-
+.end_loop_step_v:
 	; dis = map_y*(2^10) - player_y
 	sub cx, [player_y]
 	mov [.min_dis_v], cx
 
-.end_loop_step_v:
+.start_step_h:
 	; Horizontal Scan
 	mov byte [.first_loop_var], 1
 	mov bx, [player_x] ; cur x pos
