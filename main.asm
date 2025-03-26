@@ -4,6 +4,14 @@ ORG 0
 BITS 16
 
 program_start:
+	; Setup IVT
+	push ds
+	mov ax, 0
+	mov ds, ax
+	mov word [ds:0x0000], divide_exception
+	mov ax, cs
+	mov word [ds:0x0002], ax
+	pop ds
 
 .loop:
 	call wait_frame
@@ -190,29 +198,90 @@ draw_map:
 render_3d:
 	mov word [.pixel_x], 0
 .loop_x:
+	; Vertical Scan
+	mov word [.min_dis_v], 65535
 	mov byte [.first_loop_var], 1
 	mov bx, [player_x] ; cur x pos
-	mov cx, [player_y]
+	mov cx, [player_y] ; cur y pos
+	shr bx, 10 ; map x pos
+.loop_step_v:
+	; dec map_x
+	dec bx
+
+	cmp byte [.first_loop_var], 0
+	mov byte [.first_loop_var], 0
+	je .not_first_loop_v
+
+	push bx
+	shl bx, 10
+	sub bx, [player_x]
+	neg bx
+	mov ax, 160
+	mul cx ; changes dx
+	mov cx, [.pixel_x]
+	cmp cx, 0
+	jne .cx_not_0 ; to prevent divide by 0
+	pop bx
+	jmp .end_loop_step_v
+.cx_not_0:
+	div cx ; changes dx
+	add cx, ax
+	pop bx
+	jmp .first_loop_v
+.not_first_loop_v:
+	push bx
+	mov dx, 2
+	mov ax, 32768
+	mov cx, [.pixel_x]
+	div cx ; changes dx
+	add cx, ax
+	pop bx
+.first_loop_v:
+	; block = map[x, y]
+	mov si, map
+	mov ax, cx
+	shr ax, 7
+	mov dx, bx
+	add ax, dx
+	add si, ax
+	lodsb
+
+	; if block == 0 && map_x != 0, continue
+	cmp bx, 0
+	je .world_border
+	cmp al, 0
+	je .loop_step_v
+.world_border:
+
+	; dis = map_y*(2^10) - player_y
+	sub cx, [player_y]
+	mov [.min_dis_v], cx
+
+.end_loop_step_v:
+	; Horizontal Scan
+	mov byte [.first_loop_var], 1
+	mov bx, [player_x] ; cur x pos
+	mov cx, [player_y] ; cur y pos
 	shr cx, 10 ; map y pos
-.loop_step:
+.loop_step_h:
 	; inc map_y
 	inc cx
 
 	cmp byte [.first_loop_var], 0
 	mov byte [.first_loop_var], 0
-	je .not_first_loop
+	je .not_first_loop_h
 
 	push cx
 	shl cx, 10
 	sub cx, [player_y]
-	mov ax, [.pixel_x] ;temp
+	mov ax, [.pixel_x]
 	mul cx ; changes dx
 	mov cx, 160
 	div cx ; changes dx
 	sub bx, ax
 	pop cx
-	jmp .first_loop
-.not_first_loop:
+	jmp .first_loop_h
+.not_first_loop_h:
 	push cx
 	mov ax, [.pixel_x]
 	shl ax, 6
@@ -221,8 +290,7 @@ render_3d:
 	div cx ; changes dx
 	sub bx, ax
 	pop cx
-.first_loop:
-
+.first_loop_h:
 	; block = map[x, y]
 	mov si, map
 	mov ax, cx
@@ -235,14 +303,22 @@ render_3d:
 
 	; if block == 0, continue
 	cmp al, 0
-	je .loop_step
+	je .loop_step_h
 
 	; dis = map_y*(2^10) - player_y
-	; line_len = dis/(2^7)
 	shl cx, 10
 	sub cx, [player_y]
-;	shr cx, 7
 
+	; Find shortest path
+	cmp [.min_dis_v], cx
+	jnb .h_shortest_dis
+	mov bh, 0x28
+	mov cx, [.min_dis_v]
+	jmp .render
+.h_shortest_dis:
+	mov bh, 0x20
+
+.render:
 	; Render
 	mov di, [.pixel_x]
 	add di, 160
@@ -250,10 +326,13 @@ render_3d:
 
 	inc word [.pixel_x]
 	cmp word [.pixel_x], 160
+
 	jne .loop_x
 	ret
 .first_loop_var:
 	db 1
+.min_dis_v:
+	dw 65535
 .pixel_x:
 	dw 0
 
@@ -261,6 +340,7 @@ render_3d:
 draw_line:
 	; cx = distance from wall
 	; di = x coordinate
+	; bh = color
 
 	; if dis < 820, len = 200
 	cmp cx, 820
@@ -285,7 +365,7 @@ draw_line:
 	shl ax, 6
 	add di, ax
 	shl cl, 1
-	mov al, 0x20 ; color
+	mov al, bh ; color
 .loop:
 	stosb
 	add di, 320-1
@@ -351,6 +431,13 @@ cos_table:
 	db 0,-25,-49,-71,-91,-107,-118,-126
 	db -128,-126,-118,-107,-91,-71,-49,-25
 	db -1,24,48,70,90,106,117,125
+
+; Exception Handlers
+divide_exception:
+	mov dx, 0
+	mov ax, 65535
+	mov cx, 1
+	iret
 
 
 times NUM_SECTORS*512-($-$$) db 0
