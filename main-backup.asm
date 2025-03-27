@@ -25,127 +25,6 @@ program_start:
 	jmp .loop
 
 ; Functions
-render_3d:
-	mov word [.pixel_x], 0
-
-	; Calculate dx1 and dy1 (slope for ray aligned with player angle)
-	; dx1 and dy1 values are 15 bit signed ints (-16384 to 16383)
-	mov byte al, [player_dx]
-	cbw
-	shl ax, 7
-	mov [.dx1], ax
-	mov byte al, [player_dy]
-	cbw
-	shl ax, 7
-	mov [.dy1], ax
-.loop:
-	; Code here
-	; calculate angle/slope
-	; reg bx = x
-	mov ax, [.pixel_x]
-	mov bx, 160
-	sub ax, bx
-	imul word [.dy1]
-	idiv bx
-	add ax, [.dx1]
-	mov bx, ax
-
-	; reg cx = y
-	mov ax, [.pixel_x]
-	mov cx, 160
-	sub ax, cx
-	imul word [.dx1]
-	idiv cx
-	neg ax
-	add ax, [.dy1]
-	mov cx, ax
-
-	; Find nearest wall
-	call cast_ray
-
-	; Draw slice of wall
-	mov di, [.pixel_x]
-	call draw_slice
-
-	; inc pixel x and repeat
-	inc word [.pixel_x]
-	cmp word [.pixel_x], 320
-	jb .loop
-	ret
-.pixel_x:
-	dw 0
-.dx1:
-	dw 0
-.dy1:
-	dw 0
-
-cast_ray:
-	; Inputs:
-	; bx = delta x (signed int)
-	; cx = delta y (signed int)
-	; Outputs:
-	; cx = distance to wall
-	; bh = color
-
-;	mov [.first_step], 1
-
-	mov [.dx2], bx
-	mov [.dy2], cx
-
-	; if delta_x >= 0 && delta_y >= 0, cx = 2048
-	cmp bx, 0
-	jl .not_quadrant_1
-	cmp cx, 0
-	jl .not_quadrant_1
-
-	; Quadrant 1
-
-	; if dx2 >= dy2, goto quad1sec2
-	mov ax, [.dx2]
-	cmp ax, [.dy2]
-	jge .quad1sec2
-
-.quad1sec1:
-	; calculate slope
-	mov ax, [.dx2]
-	mov cx, [.dy2]
-	shr cx, 8
-	inc cx ; maybe?
-	div cl
-	mov [.slope], al
-
-	; x lines
-	mov ax, [player_x]
-	shr ax, 10
-	inc ax
-	mov bx, ax
-	sub ax, [player_x]
-;	mul word [.slope]
-;	mov cx, 256
-;	div cx
-;	add ax, [player_y]
-	mov cx, ax
-	shr cx, 4
-
-	; calculate distance from player
-;	sub cx, [player_y]
-;	mov cx, 2048
-	jmp .end_cast_ray
-.quad1sec2:
-	mov cx, 4096
-	jmp .end_cast_ray
-
-
-.not_quadrant_1:
-	mov cx, 65535
-.end_cast_ray:
-	mov bh, 0x20
-	ret
-;.first_step: db 0
-.dx2: dw 0
-.dy2: dw 0
-.slope: dw 0
-
 handle_keyboard:
 	mov word [player_speed_x], 0
 	mov word [player_speed_y], 0
@@ -153,10 +32,14 @@ handle_keyboard:
 	cmp al, 0x11
 	mov bl, al
 	jne .skip_w
-	mov al, [player_dy]
+	mov si, sin_table
+	add si, [player_angle_int]
+	mov al, [si]
 	cbw
 	add [player_speed_x], ax
-	mov al, [player_dx]
+	mov si, cos_table
+	add si, [player_angle_int]
+	mov al, [si]
 	cbw
 	add [player_speed_y], ax
 	mov al, bl
@@ -164,10 +47,14 @@ handle_keyboard:
 	cmp al, 0x1E
 	mov bl, al
 	jne .skip_a
-	mov al, [player_dy]
+	mov si, sin_table
+	add si, [player_angle_int]
+	mov al, [si]
 	cbw
 	sub [player_speed_y], ax
-	mov al, [player_dx]
+	mov si, cos_table
+	add si, [player_angle_int]
+	mov al, [si]
 	cbw
 	add [player_speed_x], ax
 	mov al, bl
@@ -175,10 +62,14 @@ handle_keyboard:
 	mov bl, al
 	cmp al, 0x1F
 	jne .skip_s
-	mov al, [player_dy]
+	mov si, sin_table
+	add si, [player_angle_int]
+	mov al, [si]
 	cbw
 	sub [player_speed_x], ax
-	mov al, [player_dx]
+	mov si, cos_table
+	add si, [player_angle_int]
+	mov al, [si]
 	cbw
 	sub [player_speed_y], ax
 
@@ -186,10 +77,14 @@ handle_keyboard:
 	cmp al, 0x20
 	mov bl, al
 	jne .skip_d
-	mov al, [player_dy]
+	mov si, sin_table
+	add si, [player_angle_int]
+	mov al, [si]
 	cbw
 	add [player_speed_y], ax
-	mov al, [player_dx]
+	mov si, cos_table
+	add si, [player_angle_int]
+	mov al, [si]
 	cbw
 	sub [player_speed_x], ax
 	mov al, bl
@@ -198,27 +93,11 @@ handle_keyboard:
 	jne .skip_left_arrow
 	inc word [player_angle_int]
 	and word [player_angle_int], 32-1
-	mov si, cos_table
-	add si, [player_angle_int]
-	lodsb
-	mov byte [player_dx], al
-	mov si, sin_table
-	add si, [player_angle_int]
-	lodsb
-	mov byte [player_dy], al
 .skip_left_arrow:
 	cmp al, 0x4D
 	jne .skip_right_arrow
 	dec word [player_angle_int]
 	and word [player_angle_int], 32-1
-	mov si, cos_table
-	add si, [player_angle_int]
-	lodsb
-	mov byte [player_dx], al
-	mov si, sin_table
-	add si, [player_angle_int]
-	lodsb
-	mov byte [player_dy], al
 .skip_right_arrow:
 
 	; Move player
@@ -316,7 +195,160 @@ draw_map:
 	ret
 .i: dw 0
 
-draw_slice:
+render_3d:
+	mov word [.pixel_x], -160
+.loop_x:
+	; Vertical Scan
+	mov word [.min_dis_v], 65535
+	mov byte [.first_loop_var], 1
+	mov bx, [player_x] ; cur x pos
+	mov cx, [player_y] ; cur y pos
+	shr bx, 10 ; map x pos
+	inc bx
+.loop_step_v:
+	; dec map_x
+	dec bx
+
+	cmp byte [.first_loop_var], 0
+	mov byte [.first_loop_var], 0
+	je .not_first_loop_v
+
+	push bx
+	push cx
+	shl bx, 10
+	sub bx, [player_x]
+	neg bx
+	mov ax, 160
+	mul bx ; changes dx ; good
+	mov cx, [.pixel_x]
+	cmp cx, 0
+	jne .cx_not_0 ; to prevent divide by 0
+	pop cx
+	pop bx
+	mov cx, 65535 ; max distance
+	jmp .end_loop_step_v
+.cx_not_0:
+	div cx ; changes dx
+	pop cx
+	add cx, ax
+	pop bx
+	jmp .first_loop_v
+.not_first_loop_v:
+	push bx
+	push cx
+	mov dx, 2
+	mov ax, 32768
+	mov cx, [.pixel_x]
+	div cx ; changes dx
+	pop cx
+	add cx, ax
+	pop bx
+.first_loop_v:
+	; block = map[x, y]
+	mov si, map
+	mov ax, cx
+	shr ax, 10
+	shl ax, 3
+	mov dx, bx
+	dec dx
+	add ax, dx
+	add si, ax
+	lodsb
+
+	; if block == 0 && map_x != 0, continue
+	cmp bx, 0
+	je .world_border
+	cmp cx, 8*1024
+	jae .world_border
+	cmp al, 0
+	je .loop_step_v
+.world_border:
+.end_loop_step_v:
+	; dis = map_y*(2^10) - player_y
+	sub cx, [player_y]
+	mov [.min_dis_v], cx
+
+.start_step_h:
+	; Horizontal Scan
+	mov byte [.first_loop_var], 1
+	mov bx, [player_x] ; cur x pos
+	mov cx, [player_y] ; cur y pos
+	shr cx, 10 ; map y pos
+.loop_step_h:
+	; inc map_y
+	inc cx
+
+	cmp byte [.first_loop_var], 0
+	mov byte [.first_loop_var], 0
+	je .not_first_loop_h
+
+	push cx
+	shl cx, 10
+	sub cx, [player_y]
+	mov ax, [.pixel_x]
+	mul cx ; changes dx
+	mov cx, 160
+	div cx ; changes dx
+	sub bx, ax
+	pop cx
+	jmp .first_loop_h
+.not_first_loop_h:
+	push cx
+	mov ax, [.pixel_x]
+	shl ax, 6
+	mov cx, 10
+	mov dx, 0
+	div cx ; changes dx
+	sub bx, ax
+	pop cx
+.first_loop_h:
+	; block = map[x, y]
+	mov si, map
+	mov ax, cx
+	shl ax, 3
+	mov dx, bx
+	shr dx, 10
+	add ax, dx
+	add si, ax
+	lodsb
+
+	; if block == 0, continue
+	cmp al, 0
+	je .loop_step_h
+
+	; dis = map_y*(2^10) - player_y
+	shl cx, 10
+	sub cx, [player_y]
+
+	; Find shortest path
+	cmp [.min_dis_v], cx
+	jnb .h_shortest_dis
+	mov bh, 0x28
+	mov cx, [.min_dis_v]
+	jmp .render
+.h_shortest_dis:
+	mov bh, 0x20
+
+.render:
+	; Render
+	mov di, [.pixel_x]
+	add di, 160
+	call draw_line
+
+	inc word [.pixel_x]
+	cmp word [.pixel_x], 160
+
+	jne .loop_x
+	ret
+.first_loop_var:
+	db 1
+.min_dis_v:
+	dw 65535
+.pixel_x:
+	dw 0
+
+
+draw_line:
 	; cx = distance from wall
 	; di = x coordinate
 	; bh = color
@@ -374,9 +406,6 @@ draw_sprite8:
 player_x: dw 12*128
 player_y: dw 12*128
 player_angle_int: dw 0
-player_dx: db 127
-player_dy: db 0
-
 player_speed_x: dw 0
 player_speed_y: dw 0
 
