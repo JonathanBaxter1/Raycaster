@@ -39,7 +39,6 @@ render_3d:
 	shl ax, 7
 	mov [.dy1], ax
 .loop:
-	; Code here
 	; calculate angle/slope
 	; reg bx = x
 	mov ax, [.pixel_x]
@@ -79,7 +78,7 @@ render_3d:
 	mov bx, 32768
 	div bx
 	mov cx, ax
-.test:
+;.test:
 	pop bx
 
 	; Draw slice of wall
@@ -105,8 +104,6 @@ cast_ray:
 	; Outputs:
 	; cx = distance to wall
 	; bh = color
-
-;	mov [.first_step], 1
 
 	mov [.dx2], bx
 	mov [.dy2], cx
@@ -134,84 +131,29 @@ cast_ray:
 	div cx
 	mov [.slope], ax
 
-	; x lines
-	mov ax, [player_x]
-	shr ax, 10
-	inc ax
-	shl ax, 10
-	mov [.cur_x], ax
-	sub ax, [player_x]
-	mul word [.slope]
+	; Cast Ray X
+	mov ax, 2
+	mov bx, [.slope]
 	mov cx, 256
-	div cx
-	add ax, [player_y]
-	mov [.cur_y], ax
-.quad1sec1loop_x:
-	; check map
-	mov ax, [.cur_x]
-	shr ax, 10
-	mov bx, [.cur_y]
-	shr bx, 10
-	shl bx, 3
-	mov si, map
-	add si, bx
-	add si, ax
-	lodsb
-	cmp al, 0
-	jne .quad1sec1wall_x
+	call cast_ray_section
+	mov [.cur_x], bx
+	mov [.cur_y], cx
 
-	add word [.cur_x], 1024
-	mov ax, 1024
-	mul word [.slope]
-	mov cx, 256
-	div cx
-	add [.cur_y], ax
-	jmp .quad1sec1loop_x
-
-.quad1sec1wall_x:
 	mov ax, [.cur_x]
 	mov [.min_x], ax
 	mov word [.cur_x], 65535
 	cmp byte [.slope], 0
-	je .quad1sec1wall_y
+	je .quad1sec1wall_hit
 
-	; y lines
-	mov ax, [player_y]
-	shr ax, 10
-	inc ax
-	shl ax, 10
-	mov [.cur_y], ax
-	sub ax, [player_y]
-	mov cx, 256
-	mul cx
-	div word [.slope]
-	add ax, [player_x]
-	mov [.cur_x], ax
-.quad1sec1loop_y:
-	; check map
-	mov ax, [.cur_x]
-	shr ax, 10
-	mov bx, [.cur_y]
-	shr bx, 10
-	shl bx, 3
-	mov si, map
-	add si, bx
-	add si, ax
-	lodsb
-	cmp al, 0
-	jne .quad1sec1wall_y
-
-	add word [.cur_y], 1024
-	mov ax, 1024
-	mov cx, 256
-	mul cx
-	div word [.slope]
-	add [.cur_x], ax
-	jmp .quad1sec1loop_y
-
-
-.quad1sec1wall_y:
-	; calculate distance from player
+	; Cast Ray Y
+	mov ax, 512
+	mov bx, 256
+	mov cx, [.slope]
+	call cast_ray_section
+	mov [.cur_x], bx
+	mov [.cur_y], cx
+.quad1sec1wall_hit:
+	; Calculate distance from player and color
 	mov cx, [.min_x]
 	cmp cx, [.cur_x]
 	mov byte [.color], 0x20
@@ -221,6 +163,7 @@ cast_ray:
 .quad1sec1min_x:
 	sub cx, [player_x]
 
+	; Perspective correct
 	mov bx, [.slope]
 	shl bx, 1
 	mov si, perspective_correct_table256
@@ -233,8 +176,8 @@ cast_ray:
 	mov cx, ax
 
 	jmp .end_cast_ray
+
 .quad1sec2:
-;	mov byte [.color], 0x20
 	mov cx, 32768
 	jmp .end_cast_ray
 
@@ -245,14 +188,91 @@ cast_ray:
 	mov bh, [.color]
 ;	mov bh, 0x20
 	ret
-;.first_step: db 0
 .dx2: dw 0
 .dy2: dw 0
 .slope: dw 0
-.cur_x: dw 0
-.cur_y: dw 0
+.cur_x: dw 0 ; remove?
+.cur_y: dw 0 ; remove?
 .min_x: dw 0
 .color: db 0x20
+
+cast_ray_section:
+	mov [.slope1], bx
+	mov [.slope2], cx
+	mov bx, ax
+	and bx, 0x00FF
+	shr ax, 8
+
+	mov si, player_coords
+	add si, ax
+	mov [.player_coord_pointer1], si
+
+	mov si, player_coords
+	add si, bx
+	mov [.player_coord_pointer2], si
+
+	mov si, .cur_coords
+	add si, ax
+	mov [.cur_coord_pointer1], si
+
+	mov si, .cur_coords
+	add si, bx
+	mov [.cur_coord_pointer2], si
+
+	mov si, [.player_coord_pointer1]
+	mov ax, [si]
+	shr ax, 10
+	inc ax
+	shl ax, 10
+	mov si, [.cur_coord_pointer1]
+	mov [si], ax
+	mov si, [.player_coord_pointer1]
+	sub ax, [si]
+	mul word [.slope1]
+	div word [.slope2]
+	mov cx, ax
+	mov si, [.player_coord_pointer2]
+	add cx, [si]
+	sub si, player_coords-.cur_coords
+	mov [si], cx
+.loop:
+	; check map
+	mov ax, [.cur_x]
+	shr ax, 10
+	mov bx, [.cur_y]
+	shr bx, 10
+	shl bx, 3
+	mov si, map
+	add si, bx
+	add si, ax
+	lodsb
+	cmp al, 0
+	jne .wall_hit
+
+	mov si, [.cur_coord_pointer1]
+	add word [si], 1024
+	mov ax, 1024
+	mul word [.slope1]
+	mov cx, [.slope2]
+	div cx
+	mov cx, ax
+	mov si, [.cur_coord_pointer2]
+	add [si], cx
+	jmp .loop
+
+.wall_hit:
+	mov bx, [.cur_x]
+	mov cx, [.cur_y]
+	ret
+.slope1: dw 0
+.slope2: dw 0
+.cur_coords:
+.cur_x: dw 0
+.cur_y: dw 0
+.cur_coord_pointer1: dw 0
+.cur_coord_pointer2: dw 0
+.player_coord_pointer1: dw 0
+.player_coord_pointer2: dw 0
 
 handle_keyboard:
 	mov word [player_speed_x], 0
@@ -479,6 +499,7 @@ draw_sprite8:
 	ret
 
 ; Data
+player_coords:
 player_x: dw 12*128
 player_y: dw 12*128
 player_angle_int: dw 0

@@ -1,1 +1,1 @@
-%define NUM_SECTORS 4
+%define NUM_SECTORS 5
